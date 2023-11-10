@@ -181,6 +181,18 @@ class GroupNorm(torch.nn.Module):
         4096,
     }
     SUPPORTED_GROUPS = {16, 32}
+    SUPPORTED_DTYPES = {
+        # (input dtype, parameter dtype)
+        (torch.float32, torch.float32),
+        (torch.float32, torch.float16),
+        (torch.float32, torch.bfloat16),
+        (torch.float16, torch.float16),
+        (torch.float16, torch.bfloat16),
+        (torch.float16, torch.float32),
+        (torch.bfloat16, torch.bfloat16),
+        (torch.bfloat16, torch.float16),
+        (torch.bfloat16, torch.float32),
+    }
 
     def __init__(self,
                  num_groups: int,
@@ -221,12 +233,15 @@ class GroupNorm(torch.nn.Module):
         is_nhwc = input.is_contiguous(memory_format=torch.channels_last)
         is_legal_groups = self.num_groups in self.SUPPORTED_GROUPS
         is_legal_channels = self.num_channels in self.SUPPORTED_CHANNELS
-        is_half_or_float_or_bf16 = input.dtype in [
+        is_input_half_or_float_or_bf16 = input.dtype in [
             torch.float16, torch.bfloat16, torch.float32
         ]
+        is_supported_dtype_combination = not self.affine or \
+            (input.dtype, self.weight.dtype) in self.SUPPORTED_DTYPES
         is_legal_act = self.act in ['', 'silu', 'swish']
 
-        if is_nhwc and is_half_or_float_or_bf16 and is_legal_act and \
+        if is_nhwc and is_input_half_or_float_or_bf16 and \
+                is_supported_dtype_combination and is_legal_act and \
                 self.affine and is_legal_groups and is_legal_channels:
             return True
         else:
