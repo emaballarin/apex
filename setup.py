@@ -388,8 +388,6 @@ if has_flag("--cuda_ext", "APEX_CUDA_EXT"):
         )
     )
 
-    if bare_metal_version >= Version("11.0"):
-
     ext_modules.append(
         CUDAExtension(
             name="fused_weight_gradient_mlp_cuda",
@@ -514,31 +512,36 @@ if has_flag("--group_norm", "APEX_GROUP_NORM"):
     )
 
     # CUDA group norm V2 is tested on SM100
-    if bare_metal_version >= Version("12.8"):
-        arch_flags = ["-gencode=arch=compute_100,code=sm_100"]
-    else:
-        arch_flags = ["-gencode=arch=compute_90,code=compute_90"]
+    if bare_metal_version >= Version("12.4"):
+        if bare_metal_version >= Version("12.8"):
+            arch_flags = [
+                "-gencode=arch=compute_90,code=sm_90",
+                "-gencode=arch=compute_100,code=sm_100",
+                "-gencode=arch=compute_120,code=compute_120",
+            ]
+        else:
+            arch_flags = ["-gencode=arch=compute_90,code=compute_90"]
 
-    ext_modules.append(
-        CUDAExtension(
-            name="group_norm_v2_cuda",
-            sources=[
-                "apex/contrib/csrc/group_norm_v2/gn.cpp",
-                "apex/contrib/csrc/group_norm_v2/gn_cuda.cu",
-                "apex/contrib/csrc/group_norm_v2/gn_utils.cpp",
-            ] + glob.glob("apex/contrib/csrc/group_norm_v2/gn_cuda_inst_*.cu"),
-            extra_compile_args={
-                "cxx": ["-O2"] + version_dependent_macros,
-                "nvcc": [
-                    "-O2", "--use_fast_math", "--ftz=false",
-                    "-U__CUDA_NO_HALF_CONVERSIONS__",
-                    "-U__CUDA_NO_HALF_OPERATORS__",
-                    "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
-                    "-U__CUDA_NO_BFLOAT16_OPERATORS__",
-                ] + arch_flags + version_dependent_macros,
-            },
+        ext_modules.append(
+            CUDAExtension(
+                name="group_norm_v2_cuda",
+                sources=[
+                    "apex/contrib/csrc/group_norm_v2/gn.cpp",
+                    "apex/contrib/csrc/group_norm_v2/gn_cuda.cu",
+                    "apex/contrib/csrc/group_norm_v2/gn_utils.cpp",
+                ] + glob.glob("apex/contrib/csrc/group_norm_v2/gn_cuda_inst_*.cu"),
+                extra_compile_args={
+                    "cxx": ["-O2"],
+                    "nvcc": [
+                        "-O2", "--use_fast_math", "--ftz=false",
+                        "-U__CUDA_NO_HALF_CONVERSIONS__",
+                        "-U__CUDA_NO_HALF_OPERATORS__",
+                        "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
+                        "-U__CUDA_NO_BFLOAT16_OPERATORS__",
+                    ] + arch_flags,
+                },
+            )
         )
-    )
 
 if has_flag("--index_mul_2d", "APEX_INDEX_MUL_2D"):
     if "--index_mul_2d" in sys.argv:
@@ -646,6 +649,21 @@ if has_flag("--fmha", "APEX_FMHA"):
     if bare_metal_version < Version("11.0"):
         raise RuntimeError("--fmha only supported on sm_80 and sm_90 GPUs")
 
+    cc_flag = []
+    cc_flag.append("-gencode")
+    cc_flag.append("arch=compute_80,code=sm_80")
+    if bare_metal_version >= Version("11.8"):
+        cc_flag.append("-gencode")
+        cc_flag.append("arch=compute_90,code=sm_90")
+    if bare_metal_version >= Version("12.8"):
+        cc_flag.append("-gencode")
+        cc_flag.append("arch=compute_100,code=sm_100")
+        cc_flag.append("-gencode")
+        cc_flag.append("arch=compute_120,code=sm_120")
+    if bare_metal_version >= Version("13.0"):
+        cc_flag.append("-gencode")
+        cc_flag.append("arch=compute_110,code=sm_110")
+
     ext_modules.append(
         CUDAExtension(
             name="fmhalib",
@@ -671,7 +689,7 @@ if has_flag("--fmha", "APEX_FMHA"):
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
                     "--use_fast_math",
-                ] + generator_flag,
+                ] + generator_flag + cc_flag,
             },
             include_dirs=[
                 os.path.join(this_dir, "apex/contrib/csrc"),
